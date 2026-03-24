@@ -1,0 +1,45 @@
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project]
+name = "traffic-api"
+version = "0.1.0"
+description = "Geospatial Traffic Microservice"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy>=2.0.0",
+    "geoalchemy2>=0.15.0",
+    "psycopg2-binary>=2.9.0",
+    "alembic>=1.14.0",
+    "pandas>=2.2.0",
+    "pyarrow>=18.0.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "httpx>=0.28.0",
+    "shapely>=2.1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.8.0",
+    "black>=25.0.0",
+]
+
+[tool.black]
+line-length = 140
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+
+[tool.ruff.format]
+quote-style = "double"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
