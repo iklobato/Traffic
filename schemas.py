@@ -1,8 +1,11 @@
 """Pydantic schemas for API request/response."""
 
-from typing import Optional, List
-from pydantic import BaseModel, Field
+from typing import Generic, TypeVar, List, Optional
+from pydantic import BaseModel, Field, computed_field
 from enum import Enum
+
+
+T = TypeVar("T")
 
 
 class Period(str, Enum):
@@ -25,6 +28,31 @@ class Period(str, Enum):
             Period.PM_PEAK: (16, 18),
             Period.EVENING: (19, 23),
         }[self.value]
+
+
+class PaginationParams(BaseModel):
+    """Validated pagination parameters."""
+
+    limit: int = Field(default=5, ge=1, le=5, description="Max items per page (max 5)")
+    offset: int = Field(default=0, ge=0, description="Number of items to skip")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Generic paginated response wrapper."""
+
+    data: List[T]
+    total: int = Field(..., ge=0, description="Total number of items available")
+    limit: int = Field(..., ge=1, le=5)
+    offset: int = Field(..., ge=0)
+
+    @computed_field
+    @property
+    def has_more(self) -> bool:
+        """Whether there are more items available."""
+        return self.offset + len(self.data) < self.total
+
+    class Config:
+        from_attributes = True
 
 
 class SpatialFilterRequest(BaseModel):
