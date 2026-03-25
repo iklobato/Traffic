@@ -1,7 +1,6 @@
 """Traffic data repository - handles all database queries."""
 
 from typing import List, Optional
-from functools import lru_cache
 from sqlalchemy import func, and_, text
 from sqlalchemy.orm import Session
 from models import Link, SpeedRecord

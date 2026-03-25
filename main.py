@@ -2,7 +2,6 @@
 
 import logging
 import time
-from typing import List
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -11,9 +10,7 @@ from config import settings
 from database import get_db, engine
 from repos import TrafficRepository, get_geometry_cache_stats
 from schemas import (
-    LinkAggregate,
     LinkAggregateWithGeometry,
-    SlowLink,
     SpatialFilterRequest,
     Period,
     PaginationParams,
