@@ -3,7 +3,7 @@
 import pytest
 
 from repos import TrafficRepository
-from schemas import Period
+from schemas import Period, PaginationParams, AggregatesResponse, SlowLinksResponse, SpatialFilterResponse
 
 
 class TestGetAggregates:
@@ -12,22 +12,25 @@ class TestGetAggregates:
     def test_get_aggregates_with_data(self, db_session):
         """Test get_aggregates returns results for existing data."""
         repo = TrafficRepository(db_session)
-        result = repo.get_aggregates("Tuesday", Period.AM_PEAK)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        assert result[0].link_id is not None
-        assert result[0].avg_speed is not None
+        pagination = PaginationParams(limit=5, offset=0)
+        result = repo.get_aggregates("Tuesday", Period.AM_PEAK, pagination)
+        assert isinstance(result, AggregatesResponse)
+        assert len(result.data) > 0
+        assert result.data[0].link_id is not None
+        assert result.data[0].avg_speed is not None
 
     def test_get_aggregates_no_data(self, db_session):
         """Test get_aggregates returns empty list for non-existent day."""
         repo = TrafficRepository(db_session)
-        result = repo.get_aggregates("Sunday", Period.AM_PEAK)
-        assert isinstance(result, list)
-        assert len(result) == 0
+        pagination = PaginationParams(limit=5, offset=0)
+        result = repo.get_aggregates("Sunday", Period.AM_PEAK, pagination)
+        assert isinstance(result, AggregatesResponse)
+        assert len(result.data) == 0
 
     def test_get_aggregates_all_periods(self, db_session):
         """Test get_aggregates works for all periods."""
         repo = TrafficRepository(db_session)
+        pagination = PaginationParams(limit=5, offset=0)
         for period in [
             Period.OVERNIGHT,
             Period.EARLY_MORNING,
@@ -37,8 +40,8 @@ class TestGetAggregates:
             Period.PM_PEAK,
             Period.EVENING,
         ]:
-            result = repo.get_aggregates("Tuesday", period)
-            assert isinstance(result, list)
+            result = repo.get_aggregates("Tuesday", period, pagination)
+            assert isinstance(result, AggregatesResponse)
 
 
 class TestGetLinkDetail:
@@ -62,7 +65,6 @@ class TestGetLinkDetail:
     def test_get_link_detail_no_data_for_period(self, db_session):
         """Test get_link_detail returns None when no data for period."""
         repo = TrafficRepository(db_session)
-        # Link exists but no data for Sunday
         result = repo.get_link_detail("1240632857", "Sunday", Period.AM_PEAK)
         assert result is None
 
@@ -73,13 +75,13 @@ class TestGetSlowLinks:
     def test_get_slow_links_returns_results(self, db_session):
         """Test get_slow_links returns slow links."""
         repo = TrafficRepository(db_session)
-        result = repo.get_slow_links(Period.AM_PEAK, 30.0, 1)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        # Verify structure
-        assert result[0].link_id is not None
-        assert result[0].slow_days is not None
-        assert result[0].avg_speed is not None
+        pagination = PaginationParams(limit=5, offset=0)
+        result = repo.get_slow_links(Period.AM_PEAK, 30.0, 1, pagination)
+        assert isinstance(result, SlowLinksResponse)
+        assert len(result.data) > 0
+        assert result.data[0].link_id is not None
+        assert result.data[0].slow_days is not None
+        assert result.data[0].avg_speed is not None
 
     def test_get_slow_links_threshold_respected(self, db_session):
         """Test get_slow_links respects threshold parameter.
@@ -88,20 +90,18 @@ class TestGetSlowLinks:
         Higher threshold = less strict = more results (any link under threshold)
         """
         repo = TrafficRepository(db_session)
-        # threshold=10 is stricter (only links with avg < 10) = fewer results
-        result_strict = repo.get_slow_links(Period.AM_PEAK, 10.0, 1)
-        # threshold=60 is less strict (links with avg < 60) = more results
-        result_lenient = repo.get_slow_links(Period.AM_PEAK, 60.0, 1)
-        assert len(result_strict) < len(result_lenient)
+        pagination = PaginationParams(limit=5, offset=0)
+        result_strict = repo.get_slow_links(Period.AM_PEAK, 10.0, 1, pagination)
+        result_lenient = repo.get_slow_links(Period.AM_PEAK, 60.0, 1, pagination)
+        assert result_strict.total < result_lenient.total
 
     def test_get_slow_links_min_days_respected(self, db_session):
         """Test get_slow_links respects min_days parameter."""
         repo = TrafficRepository(db_session)
-        # min_days=1 should return more
-        result_1 = repo.get_slow_links(Period.AM_PEAK, 30.0, 1)
-        # min_days=3 should return fewer or equal
-        result_3 = repo.get_slow_links(Period.AM_PEAK, 30.0, 3)
-        assert len(result_1) >= len(result_3)
+        pagination = PaginationParams(limit=5, offset=0)
+        result_1 = repo.get_slow_links(Period.AM_PEAK, 30.0, 1, pagination)
+        result_3 = repo.get_slow_links(Period.AM_PEAK, 30.0, 3, pagination)
+        assert len(result_1.data) >= len(result_3.data)
 
 
 class TestGetSpatialFilter:
@@ -110,25 +110,26 @@ class TestGetSpatialFilter:
     def test_get_spatial_filter_returns_results(self, db_session):
         """Test get_spatial_filter returns segments in bbox."""
         repo = TrafficRepository(db_session)
-        result = repo.get_spatial_filter("Tuesday", Period.AM_PEAK, [-81.8, 30.1, -81.6, 30.3])
-        assert isinstance(result, list)
-        assert len(result) > 0
-        assert result[0].geometry is not None
+        pagination = PaginationParams(limit=5, offset=0)
+        result = repo.get_spatial_filter("Tuesday", Period.AM_PEAK, [-81.8, 30.1, -81.6, 30.3], pagination)
+        assert isinstance(result, SpatialFilterResponse)
+        assert len(result.data) > 0
+        assert result.data[0].geometry is not None
 
     def test_get_spatial_filter_empty_bbox(self, db_session):
         """Test get_spatial_filter with bbox returning no results."""
         repo = TrafficRepository(db_session)
-        # Empty area (middle of ocean)
-        result = repo.get_spatial_filter("Tuesday", Period.AM_PEAK, [0.0, 0.0, 0.1, 0.1])
-        assert isinstance(result, list)
-        # Likely empty for this bbox
+        pagination = PaginationParams(limit=5, offset=0)
+        result = repo.get_spatial_filter("Tuesday", Period.AM_PEAK, [0.0, 0.0, 0.1, 0.1], pagination)
+        assert isinstance(result, SpatialFilterResponse)
 
     def test_get_spatial_filter_all_periods(self, db_session):
         """Test get_spatial_filter works for all periods."""
         repo = TrafficRepository(db_session)
+        pagination = PaginationParams(limit=5, offset=0)
         for period in [Period.AM_PEAK, Period.PM_PEAK, Period.MIDDAY]:
-            result = repo.get_spatial_filter("Tuesday", period, [-81.8, 30.1, -81.6, 30.3])
-            assert isinstance(result, list)
+            result = repo.get_spatial_filter("Tuesday", period, [-81.8, 30.1, -81.6, 30.3], pagination)
+            assert isinstance(result, SpatialFilterResponse)
 
 
 class TestPeriodHours:
