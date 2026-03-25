@@ -11,6 +11,101 @@ FastAPI microservice for geospatial traffic speed data with PostgreSQL + PostGIS
 └──────────┘   └──────────┘   └──────────┘   └─────────────┘
 ```
 
+### Service Flow Diagram
+
+```mermaid
+flowchart TB
+    subgraph Sources["Data Sources"]
+        Parquet["Parquet Files<br/>link_info.parquet<br/>duval_jan1_2024.parquet"]
+    end
+
+    subgraph Docker["Docker Compose"]
+        subgraph Ingest["Ingest Service"]
+            Download["Download<br/>Parquet"]
+            Transform["Transform<br/>GeoJSON → WKT"]
+            Load["Load to<br/>PostgreSQL"]
+        end
+
+        subgraph API["API Service"]
+            Router["FastAPI<br/>Router"]
+            Repo["TrafficRepository<br/>(queries)"]
+            Cache["Geometry<br/>LRU Cache"]
+        end
+
+        Nginx["Nginx<br/>Reverse Proxy<br/>+ Caching"]
+    end
+
+    subgraph Database["PostgreSQL + PostGIS"]
+        Links["links table<br/>(road segments)"]
+        SpeedRecords["speed_records table<br/>(measurements)"]
+        MaterializedView["daily_link_speeds<br/>(materialized view)"]
+        PostGIS["PostGIS<br/>spatial queries"]
+    end
+
+    subgraph Clients["Clients"]
+        Curl["curl / HTTP"]
+        Notebook["Jupyter<br/>Notebook"]
+    end
+
+    Parquet --> Download
+    Download --> Transform
+    Transform --> Load
+    Load --> Links
+    Load --> SpeedRecords
+
+    Links --> PostGIS
+    SpeedRecords --> PostGIS
+    PostGIS --> MaterializedView
+
+    Curl --> Nginx
+    Notebook --> Nginx
+
+    Nginx --> Router
+    Router --> Repo
+    Repo --> Cache
+    Repo --> Links
+    Repo --> SpeedRecords
+    Repo --> MaterializedView
+    Repo --> PostGIS
+```
+
+### Data Flow Sequence
+
+```mermaid
+sequenceDiagram
+    participant Client as Client (curl)
+    participant Nginx as Nginx (cache)
+    participant API as FastAPI
+    participant Repo as TrafficRepository
+    participant DB as PostgreSQL
+    participant Cache as Geometry Cache
+
+    Note over Client,DB: Data Ingestion Flow
+    Parquet->>DB: Ingest road network data
+    Parquet->>DB: Ingest speed measurements
+
+    Note over Client,DB: API Request Flow
+    Client->>Nginx: GET /aggregates/?day=Tuesday
+    Nginx->>Nginx: Check cache
+    alt Cache Hit
+        Nginx-->>Client: Return cached response
+    else Cache Miss
+        Nginx->>API: Forward request
+        API->>Repo: Query aggregates
+        Repo->>Cache: Check geometry cache
+        alt Cache Hit
+            Cache-->>Repo: Return cached geometry
+        else Cache Miss
+            Repo->>DB: Query links with geometry
+            DB-->>Repo: Return geometry
+            Repo->>Cache: Store in cache
+        end
+        Repo-->>API: Return data
+        API-->>Nginx: Return response
+        Nginx-->>Client: Return + cache response
+    end
+```
+
 ## Quick Start (Docker)
 
 ```bash
