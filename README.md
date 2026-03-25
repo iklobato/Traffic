@@ -1,33 +1,66 @@
 # Traffic API
 
-FastAPI microservice for geospatial traffic speed data with PostgreSQL + PostGIS.
+FastAPI microservice for geospatial traffic speed data with PostgreSQL + PostGIS, powered by Nginx reverse proxy with caching.
 
-## Features
+## Architecture
 
-- **Pagination** - All list endpoints support `limit` and `offset` parameters (max 5)
-- **Geometry Caching** - LRU cache for GeoJSON geometry to improve performance
-- **Materialized View** - Optimized `daily_link_speeds` view for slow links queries
+```
+┌──────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐
+│  Client  │──►│  Nginx   │──►│  FastAPI │──►│ PostgreSQL  │
+│  (curl)  │   │  (cache) │   │          │   │  (PostGIS)  │
+└──────────┘   └──────────┘   └──────────┘   └─────────────┘
+```
 
-## Quick Start
+## Quick Start (Docker)
+
+```bash
+# Start all services (PostgreSQL + API + Nginx)
+docker-compose up -d
+
+# Test the API
+curl "http://localhost/aggregates/?day=Tuesday&period=AM%20Peak"
+
+# View logs
+docker-compose logs -f
+
+# Stop all services
+docker-compose down
+```
+
+### With Fresh Database
+
+```bash
+# Start with fresh database (removes existing data)
+docker-compose down -v
+docker-compose up -d
+```
+
+## Development (Local)
 
 ```bash
 # Install dependencies
 uv sync
 
-# Run database migrations (includes materialized view)
+# Run database migrations
 uv run alembic upgrade head
 
 # Ingest sample data
 uv run python ingest.py
 
-# Start server
-uv run uvicorn main:app --reload
-
-# Run tests
-uv run pytest tests/ -v
+# Start server (bypasses nginx)
+uv run uvicorn main:app --reload --port 8000
 ```
 
 ## Configuration
+
+### Docker Environment
+
+Services are configured via `docker-compose.yml`:
+- **PostgreSQL**: `postgres:5432` (PostGIS 16)
+- **API**: `api:8000` (internal)
+- **Nginx**: `localhost:80` (exposed)
+
+### Local Environment
 
 Create `.env` file (see `.env.example`):
 
@@ -41,17 +74,7 @@ MAX_PAGE_SIZE=5
 
 ## API Endpoints
 
-All list endpoints return a **paginated response**:
-
-```json
-{
-  "data": [...],
-  "total": 57130,
-  "limit": 5,
-  "offset": 0,
-  "has_more": true
-}
-```
+> **Note:** All endpoints are accessed via Nginx on port **80**
 
 ### 1. GET /aggregates/
 
@@ -67,7 +90,7 @@ Get aggregated average speed per link for a given day and time period.
 
 **Request:**
 ```bash
-curl "http://localhost:8000/aggregates/?day=Tuesday&period=AM%20Peak"
+curl "http://localhost/aggregates/?day=Tuesday&period=AM%20Peak"
 ```
 
 **Response:**
@@ -78,11 +101,6 @@ curl "http://localhost:8000/aggregates/?day=Tuesday&period=AM%20Peak"
       "link_id": "1240632857",
       "avg_speed": 40.34,
       "name": "E 21st St"
-    },
-    {
-      "link_id": "1240632858",
-      "avg_speed": 35.21,
-      "name": "Main St"
     }
   ],
   "total": 57130,
@@ -107,7 +125,7 @@ Get speed and metadata for a single road segment.
 
 **Request:**
 ```bash
-curl "http://localhost:8000/aggregates/1240632857?day=Tuesday&period=AM%20Peak"
+curl "http://localhost/aggregates/1240632857?day=Tuesday&period=AM%20Peak"
 ```
 
 **Response:**
@@ -124,45 +142,20 @@ curl "http://localhost:8000/aggregates/1240632857?day=Tuesday&period=AM%20Peak"
 
 ### 3. GET /patterns/slow_links/
 
-Get links with average speeds below a threshold for at least `min_days` in a week.
+Get links with average speeds below a threshold for at least `min_days`.
 
 **Parameters:**
 | Param | Type | Required | Description |
 |-------|------|----------|-------------|
-| `day` | string | Yes | Day of week |
 | `period` | string | Yes | Time period |
 | `threshold` | float | Yes | Speed threshold (mph) |
-| `min_days` | int | Yes | Minimum days below threshold |
+| `min_days` | int | Yes | Minimum days below threshold (1-7) |
 | `limit` | int | No | Results per page (default: 5, max: 5) |
 | `offset` | int | No | Pagination offset (default: 0) |
 
 **Request:**
 ```bash
-curl "http://localhost:8000/patterns/slow_links/?day=Tuesday&period=AM%20Peak&threshold=30&min_days=1"
-```
-
-**Response:**
-```json
-{
-  "data": [
-    {
-      "link_id": "1002482094",
-      "name": null,
-      "slow_days": 1,
-      "avg_speed": 17.5
-    },
-    {
-      "link_id": "1002482095",
-      "name": "San Marco Blvd",
-      "slow_days": 1,
-      "avg_speed": 21.04
-    }
-  ],
-  "total": 49968,
-  "limit": 5,
-  "offset": 0,
-  "has_more": true
-}
+curl "http://localhost/patterns/slow_links/?period=AM%20Peak&threshold=30&min_days=1"
 ```
 
 ---
@@ -176,33 +169,15 @@ Get road segments intersecting a bounding box for a given day and period.
 |-------|------|----------|-------------|
 | `day` | string | Yes (body) | Day of week |
 | `period` | string | Yes (body) | Time period |
-| `bbox` | list[float] | Yes (body) | Bounding box [minX, maxX, minY, maxY] |
-| `limit` | int | No (query) | Results per page (default: 5, max: 5) |
-| `offset` | int | No (query) | Pagination offset (default: 0) |
+| `bbox` | list[float] | Yes (body) | Bounding box [minLon, minLat, maxLon, maxLat] |
+| `limit` | int | No (query) | Results per page |
+| `offset` | int | No (query) | Pagination offset |
 
 **Request:**
 ```bash
-curl -X POST "http://localhost:8000/aggregates/spatial_filter/" \
+curl -X POST "http://localhost/aggregates/spatial_filter/" \
   -H "Content-Type: application/json" \
-  -d '{"day":"Tuesday","period":"AM Peak","bbox":[-81.8, -81.6, 30.1, 30.3]}'
-```
-
-**Response:**
-```json
-{
-  "data": [
-    {
-      "link_id": "1240474884",
-      "avg_speed": 37.84,
-      "name": "University Blvd W",
-      "geometry": "{\"type\":\"MultiLineString\",\"coordinates\":[[[-81.60999,30.27097],[-81.60958,30.27139]]]}"
-    }
-  ],
-  "total": 56468,
-  "limit": 5,
-  "offset": 0,
-  "has_more": true
-}
+  -d '{"day":"Tuesday","period":"AM Peak","bbox":[-81.8,30.1,-81.6,30.3]}'
 ```
 
 ---
@@ -221,12 +196,29 @@ curl -X POST "http://localhost:8000/aggregates/spatial_filter/" \
 
 ---
 
+## Caching
+
+Nginx provides response caching with a 60-second TTL for GET requests.
+
+**Check cache status:**
+```bash
+# First request (cache miss)
+curl -sI "http://localhost/aggregates/?day=Tuesday&period=AM%20Peak" | grep X-Cache
+
+# Second request (cache hit)
+curl -sI "http://localhost/aggregates/?day=Tuesday&period=AM%20Peak" | grep X-Cache
+```
+
+**Cache behavior:**
+- GET requests: Cached for 60 seconds
+- POST requests: Not cached
+- Query with `nocache` param: Bypasses cache
+
+---
+
 ## Error Responses
 
 ### Invalid Period (422)
-```bash
-curl "http://localhost:8000/aggregates/?day=Tuesday&period=Invalid"
-```
 ```json
 {
   "detail": [
@@ -240,27 +232,7 @@ curl "http://localhost:8000/aggregates/?day=Tuesday&period=Invalid"
 }
 ```
 
-### Limit Exceeds Maximum (422)
-```bash
-curl "http://localhost:8000/aggregates/?day=Tuesday&period=AM%20Peak&limit=10"
-```
-```json
-{
-  "detail": [
-    {
-      "type": "less_than_equal",
-      "loc": ["query", "limit"],
-      "msg": "Input should be less than or equal to 5",
-      "input": 10
-    }
-  ]
-}
-```
-
 ### Not Found (404)
-```bash
-curl "http://localhost:8000/aggregates/999999?day=Tuesday&period=AM%20Peak"
-```
 ```json
 {
   "detail": "No data found for link_id=999999"
@@ -273,21 +245,21 @@ curl "http://localhost:8000/aggregates/999999?day=Tuesday&period=AM%20Peak"
 
 ```
 traffic-api/
-├── main.py              # FastAPI application with pagination
-├── repos.py             # TrafficRepository (data access layer)
-├── models.py            # SQLAlchemy ORM models
-├── schemas.py           # Pydantic models, Period enum, PaginatedResponse
-├── config.py            # Settings configuration
-├── database.py          # DB session setup
-├── ingest.py            # Data ingestion script
+├── main.py              # FastAPI application
+├── repos.py            # TrafficRepository (data access layer)
+├── models.py           # SQLAlchemy ORM models
+├── schemas.py          # Pydantic models, Period enum
+├── config.py           # Settings configuration
+├── database.py         # DB session setup
+├── ingest.py          # Data ingestion script
+├── nginx.conf          # Nginx configuration with caching
+├── Dockerfile          # API container image
+├── docker-compose.yml  # Full stack orchestration
 ├── services/
-│   ├── __init__.py
-│   └── cache.py         # Geometry LRU caching service
-├── alembic/             # Database migrations
+│   └── cache.py       # Geometry caching service
+├── alembic/           # Database migrations
 │   └── versions/
-│       └── 004_create_daily_speeds.py  # Materialized view
-├── tests/               # Unit tests
-└── pyproject.toml       # Project configuration
+└── tests/             # Unit tests
 ```
 
 ---
@@ -300,9 +272,6 @@ uv run pytest tests/ -v
 
 # Run specific test file
 uv run pytest tests/test_api/test_aggregates.py -v
-
-# Run with coverage
-uv run pytest tests/ -v --cov
 ```
 
 **Test Results:** 56 passed
@@ -312,5 +281,15 @@ uv run pytest tests/ -v --cov
 ## API Documentation
 
 Once running, visit:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+- Swagger UI: http://localhost/docs (via nginx) or http://localhost:8000/docs (direct)
+- ReDoc: http://localhost/redoc
+
+---
+
+## Docker Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| nginx | 80 | Reverse proxy + caching |
+| api | 8000 | FastAPI application (internal) |
+| postgres | 5432 | PostgreSQL with PostGIS |
