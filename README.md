@@ -2,13 +2,19 @@
 
 FastAPI microservice for geospatial traffic speed data with PostgreSQL + PostGIS.
 
+## Features
+
+- **Pagination** - All list endpoints support `limit` and `offset` parameters (max 5)
+- **Geometry Caching** - LRU cache for GeoJSON geometry to improve performance
+- **Materialized View** - Optimized `daily_link_speeds` view for slow links queries
+
 ## Quick Start
 
 ```bash
 # Install dependencies
 uv sync
 
-# Run database migrations
+# Run database migrations (includes materialized view)
 uv run alembic upgrade head
 
 # Ingest sample data
@@ -29,13 +35,35 @@ Create `.env` file (see `.env.example`):
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
 API_HOST=0.0.0.0
 API_PORT=8000
+DEFAULT_PAGE_SIZE=5
+MAX_PAGE_SIZE=5
 ```
 
 ## API Endpoints
 
+All list endpoints return a **paginated response**:
+
+```json
+{
+  "data": [...],
+  "total": 57130,
+  "limit": 5,
+  "offset": 0,
+  "has_more": true
+}
+```
+
 ### 1. GET /aggregates/
 
 Get aggregated average speed per link for a given day and time period.
+
+**Parameters:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `day` | string | Yes | Day of week (e.g., Monday, Tuesday) |
+| `period` | string | Yes | Time period (see Time Periods below) |
+| `limit` | int | No | Results per page (default: 5, max: 5) |
+| `offset` | int | No | Pagination offset (default: 0) |
 
 **Request:**
 ```bash
@@ -44,18 +72,24 @@ curl "http://localhost:8000/aggregates/?day=Tuesday&period=AM%20Peak"
 
 **Response:**
 ```json
-[
-  {
-    "link_id": "1240632857",
-    "avg_speed": 40.34,
-    "name": "E 21st St"
-  },
-  {
-    "link_id": "1240632858",
-    "avg_speed": 35.21,
-    "name": "Main St"
-  }
-]
+{
+  "data": [
+    {
+      "link_id": "1240632857",
+      "avg_speed": 40.34,
+      "name": "E 21st St"
+    },
+    {
+      "link_id": "1240632858",
+      "avg_speed": 35.21,
+      "name": "Main St"
+    }
+  ],
+  "total": 57130,
+  "limit": 5,
+  "offset": 0,
+  "has_more": true
+}
 ```
 
 ---
@@ -63,6 +97,13 @@ curl "http://localhost:8000/aggregates/?day=Tuesday&period=AM%20Peak"
 ### 2. GET /aggregates/{link_id}
 
 Get speed and metadata for a single road segment.
+
+**Parameters:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `link_id` | string | Yes | Road segment ID |
+| `day` | string | Yes | Day of week |
+| `period` | string | Yes | Time period |
 
 **Request:**
 ```bash
@@ -85,27 +126,43 @@ curl "http://localhost:8000/aggregates/1240632857?day=Tuesday&period=AM%20Peak"
 
 Get links with average speeds below a threshold for at least `min_days` in a week.
 
+**Parameters:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `day` | string | Yes | Day of week |
+| `period` | string | Yes | Time period |
+| `threshold` | float | Yes | Speed threshold (mph) |
+| `min_days` | int | Yes | Minimum days below threshold |
+| `limit` | int | No | Results per page (default: 5, max: 5) |
+| `offset` | int | No | Pagination offset (default: 0) |
+
 **Request:**
 ```bash
-curl "http://localhost:8000/patterns/slow_links/?period=AM%20Peak&threshold=30&min_days=1"
+curl "http://localhost:8000/patterns/slow_links/?day=Tuesday&period=AM%20Peak&threshold=30&min_days=1"
 ```
 
 **Response:**
 ```json
-[
-  {
-    "link_id": "1002482094",
-    "name": null,
-    "slow_days": 1,
-    "avg_speed": 17.5
-  },
-  {
-    "link_id": "1002482095",
-    "name": "San Marco Blvd",
-    "slow_days": 1,
-    "avg_speed": 21.04
-  }
-]
+{
+  "data": [
+    {
+      "link_id": "1002482094",
+      "name": null,
+      "slow_days": 1,
+      "avg_speed": 17.5
+    },
+    {
+      "link_id": "1002482095",
+      "name": "San Marco Blvd",
+      "slow_days": 1,
+      "avg_speed": 21.04
+    }
+  ],
+  "total": 49968,
+  "limit": 5,
+  "offset": 0,
+  "has_more": true
+}
 ```
 
 ---
@@ -114,23 +171,38 @@ curl "http://localhost:8000/patterns/slow_links/?period=AM%20Peak&threshold=30&m
 
 Get road segments intersecting a bounding box for a given day and period.
 
+**Parameters:**
+| Param | Type | Required | Description |
+|-------|------|----------|-------------|
+| `day` | string | Yes (body) | Day of week |
+| `period` | string | Yes (body) | Time period |
+| `bbox` | list[float] | Yes (body) | Bounding box [minX, maxX, minY, maxY] |
+| `limit` | int | No (query) | Results per page (default: 5, max: 5) |
+| `offset` | int | No (query) | Pagination offset (default: 0) |
+
 **Request:**
 ```bash
 curl -X POST "http://localhost:8000/aggregates/spatial_filter/" \
   -H "Content-Type: application/json" \
-  -d '{"day":"Tuesday","period":"AM Peak","bbox":[-81.8, 30.1, -81.6, 30.3]}'
+  -d '{"day":"Tuesday","period":"AM Peak","bbox":[-81.8, -81.6, 30.1, 30.3]}'
 ```
 
 **Response:**
 ```json
-[
-  {
-    "link_id": "1240474884",
-    "avg_speed": 37.84,
-    "name": "University Blvd W",
-    "geometry": "{\"type\":\"MultiLineString\",\"coordinates\":[[[-81.60999,30.27097],[-81.60958,30.27139]]]}"
-  }
-]
+{
+  "data": [
+    {
+      "link_id": "1240474884",
+      "avg_speed": 37.84,
+      "name": "University Blvd W",
+      "geometry": "{\"type\":\"MultiLineString\",\"coordinates\":[[[-81.60999,30.27097],[-81.60958,30.27139]]]}"
+    }
+  ],
+  "total": 56468,
+  "limit": 5,
+  "offset": 0,
+  "has_more": true
+}
 ```
 
 ---
@@ -168,6 +240,23 @@ curl "http://localhost:8000/aggregates/?day=Tuesday&period=Invalid"
 }
 ```
 
+### Limit Exceeds Maximum (422)
+```bash
+curl "http://localhost:8000/aggregates/?day=Tuesday&period=AM%20Peak&limit=10"
+```
+```json
+{
+  "detail": [
+    {
+      "type": "less_than_equal",
+      "loc": ["query", "limit"],
+      "msg": "Input should be less than or equal to 5",
+      "input": 10
+    }
+  ]
+}
+```
+
 ### Not Found (404)
 ```bash
 curl "http://localhost:8000/aggregates/999999?day=Tuesday&period=AM%20Peak"
@@ -184,15 +273,20 @@ curl "http://localhost:8000/aggregates/999999?day=Tuesday&period=AM%20Peak"
 
 ```
 traffic-api/
-├── main.py              # FastAPI application
+├── main.py              # FastAPI application with pagination
 ├── repos.py             # TrafficRepository (data access layer)
-├── models.py             # SQLAlchemy ORM models
-├── schemas.py            # Pydantic models & Period enum
-├── config.py             # Settings configuration
-├── database.py           # DB session setup
-├── ingest.py             # Data ingestion script
-├── alembic/              # Database migrations
-├── tests/                # Unit tests (56 tests)
+├── models.py            # SQLAlchemy ORM models
+├── schemas.py           # Pydantic models, Period enum, PaginatedResponse
+├── config.py            # Settings configuration
+├── database.py          # DB session setup
+├── ingest.py            # Data ingestion script
+├── services/
+│   ├── __init__.py
+│   └── cache.py         # Geometry LRU caching service
+├── alembic/             # Database migrations
+│   └── versions/
+│       └── 004_create_daily_speeds.py  # Materialized view
+├── tests/               # Unit tests
 └── pyproject.toml       # Project configuration
 ```
 
