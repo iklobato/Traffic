@@ -23,8 +23,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: traffic-api
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
       API_HOST: 0.0.0.0
@@ -39,5 +39,24 @@ services:
       retries: 3
       start_period: 10s
 
+  nginx:
+    image: nginx:alpine
+    container_name: traffic-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/aggregates/?day=Tuesday&period=AM%20Peak"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
 volumes:
   postgres_data:
+  nginx_cache:
