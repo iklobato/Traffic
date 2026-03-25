@@ -1,11 +1,8 @@
 """Pydantic schemas for API request/response."""
 
-from typing import Generic, TypeVar, List, Optional
-from pydantic import BaseModel, Field, computed_field
+from typing import List, Optional
+from pydantic import BaseModel, Field
 from enum import Enum
-
-
-T = TypeVar("T")
 
 
 class Period(str, Enum):
@@ -37,30 +34,6 @@ class PaginationParams(BaseModel):
     offset: int = Field(default=0, ge=0, description="Number of items to skip")
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
-    """Generic paginated response wrapper."""
-
-    data: List[T]
-    total: int = Field(..., ge=0, description="Total number of items available")
-    limit: int = Field(..., ge=1, le=5)
-    offset: int = Field(..., ge=0)
-
-    @computed_field
-    @property
-    def has_more(self) -> bool:
-        """Whether there are more items available."""
-        return self.offset + len(self.data) < self.total
-
-    class Config:
-        from_attributes = True
-
-
-class SpatialFilterRequest(BaseModel):
-    day: str
-    period: Period
-    bbox: List[float] = Field(..., min_items=4, max_items=4)
-
-
 class LinkAggregate(BaseModel):
     link_id: str
     avg_speed: float
@@ -76,3 +49,39 @@ class SlowLink(BaseModel):
     name: Optional[str] = None
     slow_days: int
     avg_speed: float
+
+
+class SpatialFilterRequest(BaseModel):
+    day: str
+    period: Period
+    bbox: List[float] = Field(..., min_items=4, max_items=4)
+
+
+class AggregatesResponse(BaseModel):
+    """Paginated response for /aggregates/ endpoint."""
+
+    data: List[LinkAggregate]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=5)
+    offset: int = Field(..., ge=0)
+    has_more: bool
+
+
+class SlowLinksResponse(BaseModel):
+    """Paginated response for /patterns/slow_links/ endpoint."""
+
+    data: List[SlowLink]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=5)
+    offset: int = Field(..., ge=0)
+    has_more: bool
+
+
+class SpatialFilterResponse(BaseModel):
+    """Paginated response for /aggregates/spatial_filter/ endpoint."""
+
+    data: List[LinkAggregateWithGeometry]
+    total: int = Field(..., ge=0)
+    limit: int = Field(..., ge=1, le=5)
+    offset: int = Field(..., ge=0)
+    has_more: bool
