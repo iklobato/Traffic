@@ -1,7 +1,5 @@
 """Tests for /aggregates/spatial_filter/ endpoint."""
 
-import pytest
-
 
 def test_spatial_filter_success(client):
     """Test successful spatial filter retrieval with pagination."""

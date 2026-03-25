@@ -1,7 +1,5 @@
 """Tests for /aggregates/ endpoint."""
 
-import pytest
-
 
 def test_aggregates_success(client):
     """Test successful retrieval of aggregates with pagination."""

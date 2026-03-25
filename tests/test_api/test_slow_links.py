@@ -1,7 +1,5 @@
 """Tests for /patterns/slow_links/ endpoint."""
 
-import pytest
-
 
 def test_slow_links_success(client):
     """Test successful retrieval of slow links with pagination."""

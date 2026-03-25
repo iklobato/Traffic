@@ -1,7 +1,5 @@
 """Tests for /aggregates/{link_id} endpoint."""
 
-import pytest
-
 
 def test_aggregates_by_link_success(client):
     """Test successful retrieval of single link aggregate."""

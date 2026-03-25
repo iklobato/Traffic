@@ -1,7 +1,5 @@
 """Unit tests for TrafficRepository - direct repository method testing."""
 
-import pytest
-
 from repos import TrafficRepository
 from schemas import Period, PaginationParams, AggregatesResponse, SlowLinksResponse, SpatialFilterResponse
 
