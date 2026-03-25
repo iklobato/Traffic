@@ -4,7 +4,7 @@ import logging
 import time
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, exc
 
 from config import settings
 from database import get_db, engine
@@ -31,6 +31,21 @@ app = FastAPI(title="Traffic API", version="0.1.0")
 @app.on_event("startup")
 async def startup_event():
     """Refresh materialized view at startup (on demand)."""
+    logger.info("Waiting for database to be ready...")
+    max_retries = 30
+    for i in range(max_retries):
+        try:
+            with engine.connect() as conn:
+                pass
+            logger.info("Database is ready")
+            break
+        except exc.OperationalError as e:
+            if i == max_retries - 1:
+                logger.error(f"Database not available after {max_retries} attempts")
+                raise
+            logger.warning(f"Database not ready, retrying... ({i + 1}/{max_retries})")
+            time.sleep(2)
+
     logger.info("Refreshing materialized view...")
     with engine.connect() as conn:
         try:

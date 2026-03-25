@@ -3,7 +3,7 @@
 import httpx
 from io import BytesIO
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from shapely.geometry import shape
 
 from config import settings
@@ -43,6 +43,13 @@ def ingest_data():
 
     link_df = link_df[["link_id", "road_name", "geometry"]]
     link_df.columns = ["link_id", "name", "geometry"]
+
+    print("Checking existing data...")
+    with engine.connect() as conn:
+        existing = conn.execute(text("SELECT COUNT(*) FROM links")).scalar()
+    if existing and existing > 0:
+        print(f"Database already has {existing} links. Skipping ingest.")
+        return
 
     print("Inserting links...")
     link_df.to_sql("links", engine, if_exists="append", index=False)
