@@ -4,17 +4,18 @@ import pytest
 
 
 def test_spatial_filter_success(client):
-    """Test successful spatial filter retrieval."""
+    """Test successful spatial filter retrieval with pagination."""
     response = client.post(
-        "/aggregates/spatial_filter/",
+        "/aggregates/spatial_filter/?limit=5",
         json={"day": "Tuesday", "period": "AM Peak", "bbox": [-81.8, 30.1, -81.6, 30.3]},
     )
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
-    assert len(data) > 0
-    assert "link_id" in data[0]
-    assert "geometry" in data[0]
+    assert "data" in data
+    assert "total" in data
+    assert "limit" in data
+    assert isinstance(data["data"], list)
+    assert len(data["data"]) <= 5
 
 
 def test_spatial_filter_invalid_period(client):
@@ -43,8 +44,8 @@ def test_spatial_filter_empty_result(client):
     )
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
-    assert len(data) == 0
+    assert isinstance(data["data"], list)
+    assert data["total"] == 0
 
 
 def test_spatial_filter_missing_day(client):

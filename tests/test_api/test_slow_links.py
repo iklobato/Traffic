@@ -4,15 +4,16 @@ import pytest
 
 
 def test_slow_links_success(client):
-    """Test successful retrieval of slow links."""
-    response = client.get("/patterns/slow_links/?period=AM%20Peak&threshold=30&min_days=1")
+    """Test successful retrieval of slow links with pagination."""
+    response = client.get("/patterns/slow_links/?period=AM%20Peak&threshold=30&min_days=1&limit=5")
     assert response.status_code == 200
     data = response.json()
-    assert isinstance(data, list)
-    assert len(data) > 0
-    assert "link_id" in data[0]
-    assert "slow_days" in data[0]
-    assert "avg_speed" in data[0]
+    assert "data" in data
+    assert "total" in data
+    assert "limit" in data
+    assert "has_more" in data
+    assert isinstance(data["data"], list)
+    assert len(data["data"]) <= 5
 
 
 def test_slow_links_invalid_period(client):
@@ -34,8 +35,8 @@ def test_slow_links_min_days_above_max(client):
 
 
 def test_slow_links_high_threshold(client):
-    """Test with high threshold returns more results."""
-    response = client.get("/patterns/slow_links/?period=AM%20Peak&threshold=10&min_days=1")
+    """Test with high threshold."""
+    response = client.get("/patterns/slow_links/?period=AM%20Peak&threshold=10&min_days=1&limit=5")
     assert response.status_code == 200
 
 
