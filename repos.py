@@ -11,7 +11,9 @@ from schemas import (
     SlowLink,
     Period,
     PaginationParams,
-    PaginatedResponse,
+    AggregatesResponse,
+    SlowLinksResponse,
+    SpatialFilterResponse,
 )
 
 
@@ -30,7 +32,7 @@ class TrafficRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_aggregates(self, day: str, period: Period, pagination: PaginationParams) -> PaginatedResponse[LinkAggregate]:
+    def get_aggregates(self, day: str, period: Period, pagination: PaginationParams) -> AggregatesResponse:
         """Get aggregated average speed per link for a given day and time period."""
         start_hour, end_hour = period.hours
 
@@ -65,11 +67,12 @@ class TrafficRepository:
             for r in results
         ]
 
-        return PaginatedResponse(
+        return AggregatesResponse(
             data=data,
             total=total,
             limit=pagination.limit,
             offset=pagination.offset,
+            has_more=pagination.offset + len(data) < total,
         )
 
     def get_link_detail(self, link_id: str, day: str, period: Period) -> Optional[LinkAggregateWithGeometry]:
@@ -111,7 +114,7 @@ class TrafficRepository:
             geometry=geometry,
         )
 
-    def get_slow_links(self, period: Period, threshold: float, min_days: int, pagination: PaginationParams) -> PaginatedResponse[SlowLink]:
+    def get_slow_links(self, period: Period, threshold: float, min_days: int, pagination: PaginationParams) -> SlowLinksResponse:
         """Get links with average speeds below threshold for at least min_days.
 
         Uses materialized view for performance.
@@ -172,16 +175,15 @@ class TrafficRepository:
             for r in slow_counts
         ]
 
-        return PaginatedResponse(
+        return SlowLinksResponse(
             data=data,
             total=total,
             limit=pagination.limit,
             offset=pagination.offset,
+            has_more=pagination.offset + len(data) < total,
         )
 
-    def get_spatial_filter(
-        self, day: str, period: Period, bbox: List[float], pagination: PaginationParams
-    ) -> PaginatedResponse[LinkAggregateWithGeometry]:
+    def get_spatial_filter(self, day: str, period: Period, bbox: List[float], pagination: PaginationParams) -> SpatialFilterResponse:
         """Get road segments intersecting a bounding box for given day and period."""
         start_hour, end_hour = period.hours
         min_lon, min_lat, max_lon, max_lat = bbox
@@ -226,11 +228,12 @@ class TrafficRepository:
                 )
             )
 
-        return PaginatedResponse(
+        return SpatialFilterResponse(
             data=data,
             total=total,
             limit=pagination.limit,
             offset=pagination.offset,
+            has_more=pagination.offset + len(data) < total,
         )
 
 

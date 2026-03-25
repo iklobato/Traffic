@@ -17,7 +17,9 @@ from schemas import (
     SpatialFilterRequest,
     Period,
     PaginationParams,
-    PaginatedResponse,
+    AggregatesResponse,
+    SlowLinksResponse,
+    SpatialFilterResponse,
 )
 
 logging.basicConfig(
@@ -52,7 +54,7 @@ async def log_request_time(request: Request, call_next):
     return response
 
 
-@app.get("/aggregates/", response_model=PaginatedResponse[LinkAggregate])
+@app.get("/aggregates/", response_model=AggregatesResponse)
 def get_aggregates(
     day: str = Query(..., description="Day of week (e.g., 'Monday', 'Wednesday')"),
     period: Period = Query(..., description="Time period"),
@@ -82,7 +84,7 @@ def get_link_aggregate(
     return result
 
 
-@app.get("/patterns/slow_links/", response_model=PaginatedResponse[SlowLink])
+@app.get("/patterns/slow_links/", response_model=SlowLinksResponse)
 def get_slow_links(
     period: Period = Query(..., description="Time period to analyze"),
     threshold: float = Query(..., description="Speed threshold (mph)"),
@@ -96,7 +98,7 @@ def get_slow_links(
     return TrafficRepository(db).get_slow_links(period, threshold, min_days, pagination)
 
 
-@app.post("/aggregates/spatial_filter/", response_model=PaginatedResponse[LinkAggregateWithGeometry])
+@app.post("/aggregates/spatial_filter/", response_model=SpatialFilterResponse)
 def get_spatial_filter(
     request: SpatialFilterRequest,
     limit: int = Query(default=settings.DEFAULT_PAGE_SIZE, le=settings.MAX_PAGE_SIZE),
